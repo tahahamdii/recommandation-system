@@ -4,6 +4,7 @@ import pandas as pd
 
 app = Flask(__name__)
 
+
 # Load the trained Random Forest model
 rf_model = joblib.load('random_forest_model.pkl')
 
@@ -18,9 +19,15 @@ df['availability_numeric'] = df['Availability'].astype(int)
 # One-hot encode categorical variables to match the trained model
 df_encoded = pd.get_dummies(df, columns=['Title', 'Description', 'Owner'])
 
+# Load the list of model features used during training
+model_features = joblib.load('model_features.pkl')  # Ensure this contains the exact feature list
+
 # Reorder columns to match the model's features
-model_features = joblib.load('model_features.pkl')  # Load saved model features
 df_encoded = df_encoded.reindex(columns=model_features, fill_value=0)
+
+# Remove any columns that shouldn't be present (such as ID and Plus Achetés)
+df_encoded = df_encoded.drop(columns=['ID', 'Plus Achetés'], errors='ignore')
+
 
 
 @app.route('/')
@@ -31,27 +38,46 @@ def home():
 # GET method to retrieve the most purchased service
 @app.route('/most_purchased_service', methods=['GET'])
 def most_purchased_service():
-    # Predict purchases for each service using the Random Forest model
-    df_encoded['Predicted_Purchases'] = rf_model.predict(df_encoded)
+    try:
+        # Predict purchases for each service using the Random Forest model
+        df_encoded['Predicted_Purchases'] = rf_model.predict(df_encoded)
 
-    # Find the service with the highest predicted purchases
-    max_pred_idx = df_encoded['Predicted_Purchases'].idxmax()
-    most_purchased_service = df.iloc[max_pred_idx]
+        # Find the service with the highest predicted purchases
+        max_pred_idx = df_encoded['Predicted_Purchases'].idxmax()
+        most_purchased_service = df.iloc[max_pred_idx]
 
-    # Extract some key characteristics of the most purchased service
-    service_info = {
-        'Service ID': most_purchased_service['ID'],
-        'Title': most_purchased_service['Title'],
-        'Description': most_purchased_service['Description'],
-        'Base Price': most_purchased_service['Base Price'],
-        'Total Reviews': most_purchased_service['Total Reviews'],
-        'Average Stars': most_purchased_service['Average Stars'],
-        'Availability': most_purchased_service['Availability'],
-        'Predicted Purchases': df_encoded.iloc[max_pred_idx]['Predicted_Purchases']
-    }
+        # Extract some key characteristics of the most purchased service
+        service_info = {
+            'Service ID': int(most_purchased_service['ID']),
+            'Title': most_purchased_service['Title'],
+            'Description': most_purchased_service['Description'],
+            'Base Price': float(most_purchased_service['Base Price']),
+            'Total Reviews': int(most_purchased_service['Total Reviews']),
+            'Average Stars': float(most_purchased_service['Average Stars']),
+            'Availability': most_purchased_service['Availability'],
+            'Predicted Purchases': float(df_encoded.iloc[max_pred_idx]['Predicted_Purchases'])
+        }
 
-    # Return the service details as a JSON response
-    return jsonify(service_info)
+        # Convert NumPy types to standard Python types
+        def convert_types(data):
+            if isinstance(data, (pd.Series, pd.DataFrame)):
+                data = data.applymap(lambda x: x.item() if hasattr(x, 'item') else x)
+            elif isinstance(data, dict):
+                for key in data:
+                    value = data[key]
+                    if isinstance(value, (pd.Series, pd.DataFrame)):
+                        data[key] = value.applymap(lambda x: x.item() if hasattr(x, 'item') else x)
+                    elif hasattr(value, 'item'):
+                        data[key] = value.item()
+            return data
+
+        service_info = convert_types(service_info)
+
+        # Return the service details as a JSON response
+        return jsonify(service_info)
+    except Exception as e:
+        # Handle exceptions and return a meaningful error message
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':
