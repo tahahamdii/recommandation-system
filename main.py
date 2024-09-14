@@ -4,7 +4,6 @@ import pandas as pd
 
 app = Flask(__name__)
 
-
 # Load the trained Random Forest model
 rf_model = joblib.load('random_forest_model.pkl')
 
@@ -28,22 +27,22 @@ df_encoded = df_encoded.reindex(columns=model_features, fill_value=0)
 # Remove any columns that shouldn't be present (such as ID and Plus Achetés)
 df_encoded = df_encoded.drop(columns=['ID', 'Plus Achetés'], errors='ignore')
 
-
-
 @app.route('/')
 def home():
     return "Welcome to the Service Purchase Prediction API"
-
 
 # GET method to retrieve the most purchased service
 @app.route('/most_purchased_service', methods=['GET'])
 def most_purchased_service():
     try:
+        # Make a copy of the encoded DataFrame without the Predicted_Purchases column
+        df_for_prediction = df_encoded.copy()
+
         # Predict purchases for each service using the Random Forest model
-        df_encoded['Predicted_Purchases'] = rf_model.predict(df_encoded)
+        df_for_prediction['Predicted_Purchases'] = rf_model.predict(df_for_prediction)
 
         # Find the service with the highest predicted purchases
-        max_pred_idx = df_encoded['Predicted_Purchases'].idxmax()
+        max_pred_idx = df_for_prediction['Predicted_Purchases'].idxmax()
         most_purchased_service = df.iloc[max_pred_idx]
 
         # Extract some key characteristics of the most purchased service
@@ -55,7 +54,7 @@ def most_purchased_service():
             'Total Reviews': int(most_purchased_service['Total Reviews']),
             'Average Stars': float(most_purchased_service['Average Stars']),
             'Availability': most_purchased_service['Availability'],
-            'Predicted Purchases': float(df_encoded.iloc[max_pred_idx]['Predicted_Purchases'])
+            'Predicted Purchases': float(df_for_prediction.iloc[max_pred_idx]['Predicted_Purchases'])
         }
 
         # Convert NumPy types to standard Python types
@@ -78,7 +77,6 @@ def most_purchased_service():
     except Exception as e:
         # Handle exceptions and return a meaningful error message
         return jsonify({"error": str(e)}), 500
-
 
 if __name__ == '__main__':
     app.run(debug=True)
